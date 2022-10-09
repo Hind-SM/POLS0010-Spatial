@@ -1,0 +1,39 @@
+
+library(rgdal)
+library(tmap)
+library(tidyr)
+
+
+July2022Camden <- July2022[grepl('Camden',July2022$`LSOA name`),]
+
+Camden_crime <- aggregate(July2022Camden$`Crime ID`, by=list(July2022Camden$Longitude, July2022Camden$Latitude, July2022Camden$`LSOA code`, July2022Camden$`Crime type`), FUN=length)
+
+names(Camden_crime) <- c("Long", "Lat", "LSOA", "Crime", "Count")
+
+Camden_crime_SP <- SpatialPointsDataFrame(Camden_crime[,1:2], Camden_crime, proj4string = CRS("+init=epsg:4326"))
+
+tm_shape(Camden_crime_SP) + tm_bubbles(size = "Count", col = "Crime", legend.size.show = FALSE) +
+  tm_layout(legend.text.size = 1.1, legend.title.size = 1.4, legend.position = c("left", "bottom"), frame = FALSE)
+
+tm_shape(Camden_crime_SP)+  tm_bubbles(size = "Count", legend.size.show = FALSE, alpha=0.5) +
+  tm_layout(legend.text.size = 1.1, legend.title.size = 1.4, frame = FALSE)+tm_facets(by="Crime")
+
+
+crime_LSOA <-aggregate(July2022Camden$`Crime ID`, by=list(July2022Camden$`LSOA code`, July2022Camden$`Crime type`), FUN=length)
+
+names(crime_LSOA)<-c("LSOA", "Crime", "count")
+
+crime_LSOA <-spread(crime_LSOA, Crime, count)
+
+LSOA <- readOGR("~/worksheet_data/camden", "Camden_lsoa11")
+
+head(LSOA@data)
+
+LSOA_crime_sp<- merge(LSOA, crime_LSOA, by.x="LSOA11CD", by.y="LSOA")
+
+head(LSOA_crime_sp@data)
+
+tm_shape(LSOA_crime_sp) + 
+  tm_fill("Anti-social behaviour", palette = "Reds", style = "quantile", title = "Anti-social behaviour") +
+  tm_borders(alpha=.4) + tm_layout(legend.text.size = 0.8, legend.title.size = 1.1, frame = FALSE)
+  
