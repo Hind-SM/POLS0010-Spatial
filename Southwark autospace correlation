@@ -1,0 +1,157 @@
+#repeat analysis for london borough of southwark
+library("sp")
+library("rgdal")
+library("rgeos")
+library("tmap")
+library("spdep")
+
+#reads csv file
+Southwark.Data <- read.csv("~/worksheet_data/Southwark/practical_data_Southwark.csv")
+
+#the Outputarea (aka the map) requires a shapefile, readOGR reads the vectors in shape file
+#the second argument is oa11 because oa means output areas. We need that, not lsoa or msoa files
+OutputAreas <- readOGR("~/worksheet_data/Southwark/shapefiles", "Southwark_oa11")
+plot(OutputAreas)
+
+#this merges the data set to our shape file. We are displaying data info through our map
+OutputAreas.Census <- merge(OutputAreas, Southwark.Data, by.x="OA11CD", by.y="OA")
+
+#this organises the whole map with legend, colours, etc...
+tm_shape(OutputAreas.Census) + tm_fill("Qualification", palette="PuRd", style="quantile", title="% with a Qualification") + tm_borders(alpha=.4)
+
+#calculating neighbours. poly2nb uses all data points from merged shapefile/data, and constructs neighbourlist.
+neighbours <- poly2nb(OutputAreas.Census)
+neighbours
+#Neighbour list object:
+#Number of regions: 893 
+#Number of nonzero links: 5140 
+#Percentage nonzero weights: 0.6445553 
+#Average number of links: 5.755879 
+
+#now we can plot these links between neighbours and visualise distribution across space
+plot(OutputAreas.Census, border="lightgrey")
+plot(neighbours, coordinates(OutputAreas.Census), col="red")
+
+#calculate Rooks case neighbours'
+neighbours2 <- poly2nb(OutputAreas.Census, queen=FALSE)
+neighbours2
+#Neighbour list object:
+#Number of regions: 893 
+#Number of nonzero links: 4976 
+#Percentage nonzero weights: 0.6239897 
+#Average number of links: 5.572228 
+#seems like we got fewer nonzero links
+
+#lets plot both neighbour ouputs and interpret differences
+#we have fewer blues then red, just like how we saw from the values
+plot(OutputAreas.Census, border = 'lightgrey')
+plot(neighbours, coordinates(OutputAreas.Census), add=TRUE, col='blue')
+plot(neighbours2, coordinates(OutputAreas.Census), add=TRUE, col='red')
+
+#convert neighbour data to listw object. this will find saptial weights for neighbours
+Neighbours_SpatialWeightList <- nb2listw(neighbours2, style="W")
+Neighbours_SpatialWeightList
+#Characteristics of weights list object:
+#Neighbour list object:
+#Number of regions: 893 
+#Number of nonzero links: 4976 
+#Percentage nonzero weights: 0.6239897 
+#Average number of links: 5.572228 
+
+#Weights style: W 
+#Weights constants summary:
+#   n     nn   S0     S1       S2
+#W 893 797449 893 343.2039 3727.118
+
+#moran Test for global spatial autocorrelation
+#we are using all datapoints and everyones qualification, then finding whether
+#people with similar qualifications tend to have higher neighbour weights (meaning live closer together)
+moran.test(OutputAreas.Census$Qualification, Neighbours_SpatialWeightList)
+
+#heres our results:
+
+#Moran I test under randomisation
+
+#data:  OutputAreas.Census$Qualification  
+#weights: Neighbours_SpatialWeightList    
+
+#Moran I statistic standard deviate = 28.434,
+#p-value < 2.2e-16
+#alternative hypothesis: greater
+#sample estimates:
+#Moran I statistic    Expectation       Variance 
+#0.5870515983       -0.0011210762      0.0004278987
+
+#Moran I statistic =0.58 meaning that qualification vairable
+#is positively autocorrelated in southwark. The data does spatially clutter.
+
+#Moran plot
+moran <- moran.plot(OutputAreas.Census$Qualification, listw = nb2listw(neighbours2, style = "W"),asp=T)
+
+#mapping moran statistic
+moran.map <- OutputAreas.Census
+local <- localmoran(x = OutputAreas.Census$Qualification, listw = nb2listw(neighbours2, style = "W"))
+moran.map@data <-cbind(OutputAreas.Census@data, local)
+tm_shape(moran.map) + tm_fill(col = "Ii", style = "quantile", title = "local moran statistic") 
+#from map we can see autocorrelation across space
+#but how do we know if these are clusters from of low or high values
+
+#lets map p-value to observe variances in significance
+names(moran.map@data)
+moran <- moran.plot(OutputAreas.Census$Qualification, listw = nb2listw(neighbours2, style = "C"),asp=T)
+
+### to create LISA cluster map ### 
+quadrant <- vector(mode="numeric",length=nrow(local))
+
+# centers the variable of interest around its mean
+m.qualification <- OutputAreas.Census$Qualification - mean(OutputAreas.Census$Qualification)     
+
+# centers the local Moran's around the mean
+m.local <- local[,1] - mean(local[,1])    
+
+# significance threshold
+signif <- 0.1 
+
+# builds a data quadrant by extracting the row numbers from the m.qualification and m.local objects that both correspond to the criteria and then using them to update the rows with the same number in the quadrant object.
+quadrant[m.qualification <0 & m.local>0] <- 1      
+quadrant[m.qualification <0 & m.local<0] <- 2
+quadrant[m.qualification >0 & m.local<0] <- 3
+quadrant[m.qualification >0 & m.local>0] <- 4 
+quadrant[local[,5]>signif] <- 0   
+
+
+
+# Plot. Note that the findInterval function assigns the colours we need to colour the map according whether they are 0,1,2,3,4. 
+brks <- c(0,1,2,3,4)
+colors <- c("white","blue",rgb(0,0,1,alpha=0.4),rgb(1,0,0,alpha=0.4),"red")
+plot(OutputAreas.Census,border="lightgray",col=colors[findInterval(quadrant,brks,all.inside=FALSE)])
+box()
+legend("bottomleft",legend=c("insignificant","low-low","low-high","high-low","high-high"),
+       fill=colors,bty="n")
+
+#the map shows there is some staistical geographic pattern to clustering of our
+#qualification variable in southwark
+
+#GETIS-ORD
+# creates centroid and joins neighbours within 0 and x units
+nb <- dnearneigh(coordinates(OutputAreas.Census),0,800)
+# creates listw
+nb_lw <- nb2listw(nb, style = 'B')
+
+# plot the data and neighbours
+plot(OutputAreas.Census, border = 'lightgrey')
+plot(nb, coordinates(OutputAreas.Census), add=TRUE, col = 'red')
+
+# compute Getis-Ord Gi statistic
+local_g <- localG(OutputAreas.Census$Qualification, nb_lw)
+
+local_g_sp<- OutputAreas.Census
+
+local_g_sp@data <- cbind(OutputAreas.Census@data, as.matrix(local_g))
+names(local_g_sp)[6] <- "gstat"
+
+# map the results
+tm_shape(local_g_sp) + tm_fill("gstat", palette = "RdBu", style = "pretty") + tm_borders(alpha=.4)
+#> Warning in sp::proj4string(obj): CRS object has comment, which is lost in output
+#> Variable(s) "gstat" contains positive and negative values, so midpoint is set to 0. 
+#> #set midpoint =NA to show the full spectrum of the color palette
