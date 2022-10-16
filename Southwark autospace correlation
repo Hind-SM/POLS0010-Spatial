@@ -32,7 +32,7 @@ neighbours
 plot(OutputAreas.Census, border="lightgrey")
 plot(neighbours, coordinates(OutputAreas.Census), col="red")
 
-#calculate Rooks case neighbours'
+#calculate Rooks case neighbours
 neighbours2 <- poly2nb(OutputAreas.Census, queen=FALSE)
 neighbours2
 #Neighbour list object:
