@@ -37,4 +37,3 @@ names(results)
 gwr.map <- OA.census
 gwr.map@data <-cbind(OA.census@data, as.matrix(results))
 qtm(gwr.map, fill="localR2")
-?gwr.sel
