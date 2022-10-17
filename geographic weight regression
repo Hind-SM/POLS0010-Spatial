@@ -1,0 +1,40 @@
+# load the spatial libraries
+library("sp")
+library("rgdal")
+library("rgeos")
+library("tmap")
+library("spgwr")
+
+Census.Data <-read.csv("~/worksheet_data/camden/practical_data.csv")
+# Load the output area shapefiles
+Output.Areas <- readOGR("~/worksheet_data/camden", "Camden_oa11")
+
+#join shapefile with data frame
+OA.census <- merge(Output.Areas, Census.Data, by.x="OA11CD", by.y="OA")
+
+#RUN LINEAR MODEL
+model <- lm(OA.census$Qualification ~ OA.census$Unemployed+OA.census$White_British)
+
+summary(model)
+
+plot(model, which=3)
+
+resids<-residuals(model)
+
+map.resids<-OA.Census
+
+map.resids@data <- cbind(OA.Census@data, resids) 
+
+# calculate kernel bandwidth
+GWRbandwidth <- gwr.sel(OA.census$Qualification ~ OA.census$Unemployed+OA.census$White_British, data=OA.census, adapt=T)
+
+gwr.model = gwr(OA.census$Qualification ~ OA.census$Unemployed+OA.census$White_British, data = OA.census, adapt=GWRbandwidth, hatmatrix=TRUE, se.fit=TRUE) 
+gwr.model 
+
+results <-as.data.frame(gwr.model$SDF)
+names(results)
+
+gwr.map <- OA.census
+gwr.map@data <-cbind(OA.census@data, as.matrix(results))
+qtm(gwr.map, fill="localR2")
+?gwr.sel
