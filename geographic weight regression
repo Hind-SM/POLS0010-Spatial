@@ -1,4 +1,4 @@
-```js // code for coloring ```
+darkmode=$(isDarkMode)
 # load the spatial libraries
 library("sp")
 library("rgdal")
