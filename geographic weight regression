@@ -1,4 +1,3 @@
-darkmode=$(isDarkMode)
 # load the spatial libraries
 library("sp")
 library("rgdal")
