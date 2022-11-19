@@ -1,184 +1,203 @@
+---
+title: "pols0010_functionAdaptation"
+output:
+  pdf_document: default
+  html_document: default
+date: "2022-11-18"
+---
+
 ```{r}
-library(tmap)
-library(leaflet)
-library(rgdal)
-library(rgeos)
-library(sp)
+library("tmap")
+library("leaflet")
+library("rgdal")
+library("rgeos")
+library("sp")
 library("RColorBrewer")
-library(spdep)
-Southwark.Data <- read.csv("~/worksheet_data/Southwark/practical_data_Southwark.csv")
+library("spdep")
+Southwark.Data <- read.csv("C:/RDATA/worksheet_data/worksheet_data/Southwark/practical_data_Southwark.csv")
 
 #the Outputarea (aka the map) requires a shapefile, readOGR reads the vectors in shape file
 #the second argument is oa11 because oa means output areas. We need that, not lsoa or msoa files
-OutputAreas <- readOGR("~/worksheet_data/Southwark/shapefiles", "Southwark_oa11")
+OutputAreas <- readOGR("C:/RDATA/worksheet_data/worksheet_data/Southwark/shapefiles", "Southwark_oa11")
 plot(OutputAreas)
 
 #this merges the data set to our shape file. We are displaying data info through our map
 OutputAreas.Census <- merge(OutputAreas, Southwark.Data, by.x="OA11CD", by.y="OA")
 
-SPA.test(data = OutputAreas.Census, 
-         variable = OutputAreas.Census$Qualification,
-         variable_name = 'Qualification',
-         neighbour = 'queens', 
-         d1 = 0, d2 = 800, k = 4,
-         style = 'W',
-         method = 'Morans I')
 
-SPA.test <- function(data, variable, variable_name, neighbour, d1, d2, k, style, method){
+HotSpot_Finder <- function(datafile, var, var_label, neighbour_type, k, d1, d2, weight_style, colour1, colour2, SPA_type, zeropolicy){
   
-  #Step 1 - Plot basic template of area and chosen variable to give an idea 
-  #to the user of map and variable presence.
   
-  print(tm_shape(data) + 
-          tm_fill(variable_name, palette = "PuRd", 
-                  style = "quantile", title = "% of chosen variable") + 
-          tm_borders(alpha=.4))
+  #1. plot distribution of variable in a map
+  print(tm_shape(datafile)+ tm_fill(var_label, palette = colour1, style ="quantile", title = sprintf("%% with a %s", var_label)) + tm_borders(alpha=.4))
 
-  #Step 2 - Function identifies neighbours by chosen measure and adds chosen 
-  #weight style to then plot and summarize the results. 
-  #In this case: ‘queens’ measure.  
   
-  if(neighbour == 'queens'){
-    #create neighbour ‘nb’ type object 
-    N <- poly2nb(data, queen = TRUE)
-    #summary of object
-    summary.nb(N)
-    #plot of neighbour object
-    plot(data, border = 'lightgrey')
-    plot(N, coordinates(data), add=TRUE, col='blue')
-    title(main='Neighbour Map by Queens Case')
-    #create list of neighbour object with chosen weight. This case: ‘W’
-    listw <- nb2listw(N, style = style)
-    #summary of list
-    summary.listw(listw)
+
+  #2. Finding neighbours
+  if (neighbour_type == "queen"){
+    #calculate neighbours and creating object "neighbours"
+    neighbours <- poly2nb(datafile, queen = TRUE)
+    #plot neighbours map
+    plot(datafile, border = 'lightgrey')
+    plot(neighbours, coordinates(datafile), add=TRUE, col='red')
+    title(main='Queen-case neighbour map')
+    #convert neighbour data to listw object
+    listw <- nb2listw(neighbours, style=weight_style)
+    summary.listw(listw)  
+
+  } else if(neighbour_type=="rooks"){
+    #calculating neighbours and creating object "neighbours"
+    neighbours <- poly2nb(datafile, queen = FALSE)
+    #plot neighbours map
+    plot(datafile, border = 'lightgrey')
+    plot(neighbours, coordinates(datafile), add=TRUE, col='blue')
+    title(main='Rooks-case neighbour map')
+    #convert neighbour data to listw object
+    listw <- nb2listw(neighbours, style=weight_style)
+    summary.listw(listw)  
+
     
-  } else if(neighbour == 'rooks'){
-    N <- poly2nb(data, queen = FALSE) 
-    #Plot and Print Neighbour Outcome
-    summary.nb(N)
-    plot(data, border = 'lightgrey')
-    plot(N, coordinates(data), add=TRUE, col='red')
-    title(main='Neighbour Map by Rooks Case')
-    listw <- nb2listw(N, style = style)
-    summary.listw(listw)
-    
-  } else if(neighbour == 'distance'){
-    N <- dnearneigh(coordinates(data), d1, d2) 
-    #Plot and Print Neighbour Outcome
-    summary.nb(N)
-    plot(data, border = 'lightgrey')
-    plot(N, coordinates(data), add=TRUE, col='green')
-    title(main='Neighbour Map by Distance')
-    listw <- nb2listw(N, style = style)
-    summary.listw(listw)
-    
-  } else if(neighbour == 'knn'){
-    N <- knearneigh(coordinates(data), k = k) 
-    #Plot and Print Neighbour Outcome
-    plot(data, border = 'lightgrey')
-    plot(knn2nb(N), coordinates(data), add=TRUE, col='orange')
-    title(main='Neighbour Map by K Nearest Neighbours')
-    N <- knn2nb(N)
-    summary.nb(N)
-    listw <- nb2listw(N, style = style)
-    summary.listw(listw)
-  }
-  #Step 3 - Function then runs the chosen spatial autocorrelation test, 
-  #prints global and local results and plots certain graphs. 
-  #In this case: everything under ‘Morans I’ method.
-  
-  if(method == 'Morans I'){
-    test_scores <- moran.test(variable, listw)
-    print(test_scores)
-    if(test_scores$estimate['Moran I statistic'] > 0){
-      print(paste("It can be said there is POSITIVE spatial autocorrelation with a Global Moran I statistic of: ",test_scores$estimate['Moran I statistic'],sep=""))
-    } else if(test_scores$estimate['Moran I statistic'] == 0) {
-      print(paste("It can be said there is NO spatial autocorrelation with a Global Moran I statistic of: ",test_scores$estimate['Moran I statistic'],sep=""))
-    } else if(test_scores$estimate['Moran I statistic'] < 0) {
-      print(paste("It can be said there is NEGATIVE spatial autocorrelation with a Global Moran I statistic of: ",test_scores$estimate['Moran I statistic'],sep=""))
+  } else if(neighbour_type == "distance"){
+   #calculating neighbours and creating object "neighbours"
+    neighbours <-dnearneigh(coordinates(datafile), d1, d2)
+    #plot neighbour map
+    plot(datafile, border= 'lightgrey')
+    plot(neighbours, coordinates(datafile), add=TRUE, col='orange')
+    title(main='Distance-case neighbour map')
+    #convert neighbour data to listw object
+    listw <- nb2listw(neighbours, style=weight_style)
+    summary.listw(listw)  
     }
-    if(test_scores$statistic['Moran I statistic standard deviate'] >= 1.96){
-      print(paste('It can be said the data is significantly CLUSTERED with a z-score of:', test_scores$statistic['Moran I statistic standard deviate'], sep=''))
-    } else if(test_scores$statistic['Moran I statistic standard deviate'] <= -1.96){
-      print(paste('It can be said the data is significantly DISPERSED with a z-score of:', test_scores$statistic['Moran I statistic standard deviate'], sep=''))
-    } else if(test_scores$statistic['Moran I statistic standard deviate'] < 1.96 & test_scores$statistic['Moran I statistic standard deviate'] > -1.96){
-      print(paste('It can be said the data is spatially RANDOM with a z-score of:', test_scores$statistic['Moran I statistic standard deviate'], sep=''))
+  
+
+  #3. Global morans I
+  if (SPA_type == "global morans I"){
+    
+    
+    #interpreting moran value
+    GM_results <- moran.test(var, listw)
+    GM.value <- GM_results$estimate["Moran I statistic"]
+    P.value <-GM_results$p.value
+    Z.score <-GM_results$statistic["Moran I statistic standard deviate"]
+    print(GM_results)
+    
+    if(GM.value == 0){
+      print(sprintf("Your Global Moran I value of 0, shows there is no spatial autocorrelation found."))
+    } else if(GM.value < 0){
+      print(sprintf("Your Global Moran I value of %.9f, shows there is a negative spatial autocorrelation.", GM.value))
+    } else if(GM.value > 0){
+      print(sprintf("Your Global Moran I value of %.9f, shows there is a positive spatial autocorrelation.", GM.value))}
+    
+    #p-value and z-score analysis
+    if(P.value >0.05){
+      print(sprintf("Your p-value is %.9f, meaning you cannot reject the null hypothesis. Your data set seems to be randomly spatially distributed.", P.value))
+      } else if((P.value<0.05)){
+      print(sprintf("You can reject your null hyothesis because your p-value of %.9f shows statistical significance.", P.value))
+    } else if((P.value<0.05)){
+      print(sprintf("You can reject your null hyothesis because your p-value of %.9f shows statistical significance.", P.value))
     } 
-    if(test_scores$p.value <= 0.10){
-      print(paste("It can also be said the model IS statistically significant with a Global P-value of: ",test_scores$p.value, sep=""))
-    } else {
-      print(paste("It can also be said the model IS NOT statistically significant with a Global P-value of: ",test_scores$p.value, sep=""))
+    
+    if (Z.score>1.96){
+     print(sprintf("Your positive z-score of %.9f shows that the dataset's spatial distribution of high/low values is significantly more spatially clustered than a typical random spatial distirbution. Perhaps you can looking further into this through local moran I.", Z.score))
+    } else if (Z.score<1.96){
+     print(sprintf("Your negative z-score of %.9f shows that the dataset's spatial distribution of high and low values is significantly more spatially dispersed than a typical random spatial distirbution. Perhaps you can looking further into this through local moran I.", Z.score))
+    }  else {
+     print(sprintf("Yyou cannot reject your null hypothesis because your z-score of %.9f falls between-1.96 and 1.96, its likely your dataset is randomly spatially distributed.", Z.score))
     }
     
-    #creates moran scatter plot
-    moran <- moran.plot(variable, listw = nb2listw(N, style = style), asp = T)
+  } else if(SPA_type == "local morans I"){
+   #plot moran scatterplot
+    moran <- moran.plot(var, listw = nb2listw(neighbours, style = weight_style), xlab=var_label, ylab=sprintf("spatially lagged %s", var_label), asp = T)
     
-    #creates local moran results plot
-    local <- localmoran(x = variable, listw = nb2listw(N, style = style))
-    moran.map <- data
-    moran.map@data <- cbind(data@data, local)
-    print(tm_shape(moran.map) + tm_fill(col = "Ii", style = "quantile", title = "Local Moran Statistic", midpoint = NA))
-
-#Step 4 - Creates a LISA cluster map  
-    quadrant <- vector(mode="numeric",length=nrow(local))
-    #centers the variable of interest around its mean
-    m.variable <- variable - mean(variable)     
-    #centers the local Moran's around the mean
-    m.local <- local[,1] - mean(local[,1])    
-    #significance threshold
+    localM <- localmoran(x=var, listw = nb2listw(neighbours, style = weight_style))
+    moran.map <- datafile
+    moran.map@data <-cbind(datafile@data, localM)
+    print(tm_shape(moran.map) +tm_fill(col= colour2, style= "quantile", title = "local moran i stats", midpoint=NA))
+    
+    #creating LISA MAP
+    quadrant <- vector(mode= "numeric", length=nrow(localM))
+    
+    quadrant <- vector(mode="numeric",length=nrow(localM))
+    
+    # centers the variable around its mean
+    m.var <- var - mean(var)     
+    
+    # centers the local Moran's around the mean
+    m.local <- localM[,1] - mean(localM[,1])    
+    
+    # significance threshold
     signif <- 0.1 
-    #builds a data quadrant
-    quadrant[m.variable < 0 & m.local< 0] <- 1      
-    quadrant[m.variable < 0 & m.local> 0] <- 2
-    quadrant[m.variable > 0 & m.local< 0] <- 3
-    quadrant[m.variable > 0 & m.local> 0] <- 4 
-    quadrant[local[,5] > signif] <- 0   
-    #plot
+    
+    # builds a data quadrant. In this case the m.local object is used. Where there is a local Moran's I > 0 we assume similar neighbours, therefore 'low low' or 'high high', where there is a value < 0 we assume different neighbours and therefore 'low-high' or 'high-low'.
+    quadrant[m.var <0 & m.local>0] <- 1 
+    quadrant[m.var <0 & m.local<0] <- 2
+    quadrant[m.var >0 & m.local<0] <- 3
+    quadrant[m.var >0 & m.local>0] <- 4 
+    quadrant[localM[,5]>signif] <- 0  
+     #plotting lisa cluster map
     breaks <- c(0,1,2,3,4)
     colors <- c("white", "blue", rgb(0,0,1, alpha=0.4), rgb(1,0,0, alpha=0.4), "red")
-    
-   forloop <- for (i in 1:length(breaks)){
-      print(colors[i])
-    }
-    
-    
-    plot(data, border = "lightgray", col = colors[findInterval(quadrant, breaks, all.inside = FALSE)])
+    plot(datafile, border = "lightgray", col = colors[findInterval(quadrant, breaks, all.inside = FALSE)])
     box()
     legend("bottomleft", legend = c("insignificant", "low-low", "low-high", "high-low", "high-high"),
            fill = colors, bty = "n")
     legend('topright', legend = 'LISA cluster map', bty = 'n')
-  }
-  
-  elseif(method == 'Getis Ord'){
-    test_scores <- globalG.test(variable, listw)
-    print(test_scores)
-    if(test_scores$estimate['Global G statistic'] == 0){
-      print(paste("It can be said the variable has NO spatial autocorrelation with a Global Getis Ord G statistic of: ",test_scores$estimate['Global G statistic'],sep=""))
-    } else if(test_scores$estimate['Global G statistic'] > 0) {
-      print(paste("It can be said the variable is POSITIVELY spatially autocorrelated with a Global Getis Ord G statistic of: ",test_scores$estimate['Global G statistic'],sep=""))
-    } else if(test_scores$estimate['Global G statistic'] < 0) {
-      print(paste("It can be said the variable is NEGATIVELY spatially autocorrelated with a Global Getis Ord G statistic of: ",test_scores$estimate['Global G statistic'],sep=""))
-    }
-    if(test_scores$statistic['standard deviate'] > 0){
-      print(paste('It can be said the HIGH VALUES are clustered within the data with a z-score of:', test_scores$statistic['standard deviate'], sep=''))
-    } else if(test_scores$statistic['standard deviate'] < 0){
-      print(paste('It can be said the LOW VALUES are clustered within the data with a z-score of:', test_scores$statistic['standard deviate'], sep=''))
-    } 
-    if(test_scores$p.value <= 0.05){
-      print(paste("It can also be said the model IS statistically significant with a Global P-value of: ",test_scores$p.value, sep=""))
-    } else {
-      print(paste("It can also be said the model IS NOT statistically significant with a Global P-value of: ",test_scores$p.value, sep=""))
+    
+  } else if(SPA_type == "Getis ord"){
+
+    #printing intepretation for user
+    Gi_results <- globalG.test(var, listw)
+    Z.score <- Gi_results$statistic["standard deviate"]
+    P.value <- Gi_results$p.value
+    Gi.stat <- Gi_results$estimate["Global G statistic"]
+    print(Gi_results)
+    
+    #Gi statistic analysis
+    if(Gi.stat == 0){
+      print(sprintf("Your Gi statistic = 0, meaning there is no spatial autocorrelaiton found."))
+    } else if(Gi.stat < 0){
+      print(sprintf("Your Gi statistic = %.9f. meaning a negative spatial autocorrelation is found", Gi.stat))
+    } else if(Gi.stat > 0){
+      print(sprintf("Your Gi statistic = %.9f. meaning a positive spatial autocorrelation is found", Gi.stat))
     }
     
-    local_g <- localG(variable, listw)
-
-print('This is the summary of the local G statistic:') 
-    print(summary(local_g))
-    local_g_sp <- data
-    local_g_sp@data <- cbind(data@data, as.matrix(local_g))
-    names(local_g_sp)[6] <- "gstat"
-    #plot
-    print(tm_shape(local_g_sp) + tm_fill("gstat", palette = "RdBu", style = "pretty", title = 'gstat') + tm_borders(alpha=.4))
-
+    #p-value analysis
+    if(P.value >0.05){
+      print(sprintf("Your p-value is %.9f, meaning you cannot reject the null hypothesis. Your data set seems to be randomly spatially distributed.", P.value))
+      } else if((P.value<0.05)){
+        print(sprintf("You can reject your null hyothesis because your p-value of %.9f shows statistical significance.", P.value))
+    } else if((P.value<0.05)){
+      print(sprintf("You can reject your null hyothesis because your p-value of %.9f shows statistical significance.", P.value))
+    } 
+    
+    #z-score analysis
+    if (Z.score>0){
+      print(sprintf("Your positive z-score of %.9f shows high-values are clustered within your dataset.", Z.score))
+    } else if (Z.score<0){
+      print(sprintf("Your negative z-score of %.9f shows low-values are clustered within your dataset.", Z.score))
+    } else {
+      print(sprintf("you cannot reject your null hypothesis because your z-score of %.9f falls between-1.96 and 1.96, its likely your dataset is randomly spatially distributed.", Z.score))
+    }
+    
+    #plotting getis-ord results
+    Gi_local <- localG(var, listw)
+    Gi_sp <- datafile
+    Gi_sp@data <- cbind(datafile@data, as.matrix(Gi_local))
+    names(Gi_sp)[6] <- "Gstat"
+    #prints GI map
+    print(tm_shape(Gi_sp)+tm_fill("Gstat", palette = "RdBu", style="pretty")+tm_borders(alpha=.4))
+    
   }
 }
+HotSpot_Finder(datafile = OutputAreas.Census,
+               var = OutputAreas.Census$Qualification,
+               var_label = "Qualification",
+               neighbour_type = "distance",
+              d1=0,
+              d2=800,
+              weight_style = "B",
+               colour1 = "Reds",
+               colour2 = "Ii",
+               SPA_type = "Getis ord")
+
+```
